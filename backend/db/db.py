@@ -1,25 +1,11 @@
 import os
-import sqlalchemy as sql
-import sqlalchemy.orm as orm
-from sqlalchemy.orm import declarative_base
 from dotenv import load_dotenv
+from supabase import create_client, Client
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("PSQL_DB")
+url: str = os.getenv("SUPABASE_URL")
+key: str = os.getenv("SUPABASE_KEY")
 
-engine = sql.create_engine(DATABASE_URL)
+db: Client = create_client(url, key)
 
-session_local = orm.sessionmaker(bind=engine,autocommit=False,autoflush=False)
-
-Base = declarative_base()
-
-def get_db():
-    db = session_local()
-    try:
-        yield db
-    finally:
-        db.close()
-
-def create_table():
-    Base.metadata.create_all(engine)

@@ -4,7 +4,7 @@ import uuid
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException,Body
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from db.db import get_db
+from db.db import db
 from model.audio import Songs, AudioHashes
 from audio.AudioProcessing import AudioProcessing
 from pydub import AudioSegment,effects
@@ -54,56 +54,50 @@ def temp_file_upload(file: UploadFile) -> str:
 
 
 @router.post("/audio_upload")
-async def audio_upload(url: str = Body(..., embed=True), db: Session = Depends(get_db)):
-    temp_file = None
-    processed_file = None
+async def audio_upload(url: str = Body(..., embed=True)):
     try:
-        # Download from YouTube
         temp_file, title, channel = downloading_song(url)
 
-        # STANDARDIZE AUDIO
         audio_clip = AudioSegment.from_file(temp_file)
-        
-        # Force Standard Format
-        audio_clip = audio_clip.set_frame_rate(44100) 
-        audio_clip = audio_clip.set_channels(1)    
-        audio_clip = effects.normalize(audio_clip) 
+        audio_clip = audio_clip.set_frame_rate(44100)
+        audio_clip = audio_clip.set_channels(1)
+        audio_clip = effects.normalize(audio_clip)
 
         processed_file = temp_file.replace(".wav", "_std.wav")
         audio_clip.export(processed_file, format="wav")
 
-        # 3. Generate Hashes from the PROCESSED file
-        processor = AudioProcessing(processed_file) 
+        processor = AudioProcessing(processed_file)
         processor.converting_to_frequency_domain()
         hashes = processor.hashing()
 
-        # 4. Save to Database
-        song = Songs(title=title, channel=channel)
-        db.add(song)
-        db.flush()
-        
-        hash_obj = []
-        for h_val, time_offsets in hashes.items():
-            for t_offset in time_offsets:
-                hash_obj.append(AudioHashes(
-                    song_id=int(song.id),
-                    hash=int(h_val),
-                    time_offset=int(t_offset)
-                ))
-        
-        db.bulk_save_objects(hash_obj)
-        db.commit()
-        db.refresh(song)
-        
+        # INSERT SONG
+        song_res = db.table("songs").insert({
+            "title": title,
+            "channel": channel
+        }).execute()
+
+        song_id = song_res.data[0]["id"]
+
+        # INSERT HASHES
+        hash_payload = [
+            {
+                "song_id": song_id,
+                "hash": int(h),
+                "time_offset": int(t)
+            }
+            for h, offsets in hashes.items()
+            for t in offsets
+        ]
+
+        db.table("audio_hashes").insert(hash_payload).execute()
+
         return {
-            "status": "success", 
-            "message": "Audio processed successfully (Standardized 44.1kHz/Mono)",
-            "song_id": song.id,
-            "fingerprints_count": len(hash_obj)
+            "status": "success",
+            "song_id": song_id,
+            "fingerprints_count": len(hash_payload)
         }
 
     except Exception as e:
-        db.rollback()
         print(f"Error processing audio: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
         
@@ -114,7 +108,7 @@ async def audio_upload(url: str = Body(..., embed=True), db: Session = Depends(g
             os.remove(processed_file)
 
 @router.post("/identify")
-async def identify_song(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def identify_song(file: UploadFile = File(...)):
     temp_file = None
     cropped_file = None 
     try:
@@ -143,55 +137,29 @@ async def identify_song(file: UploadFile = File(...), db: Session = Depends(get_
         hash_pairs = []
         for h, times in sorted_hashes:
             for t in times:
-                hash_pairs.append(f"({int(h)}::BIGINT, {int(t)})")
+                hash_pairs.append({"input_hash": int(h), "sample_time": int(t)})
         
         if not hash_pairs:
             return {"message": "No audio fingerprints found in recording."}
-            
-        inputs = ", ".join(hash_pairs)
 
-        # Query
-        sql_query = text(f"""
-            WITH input_hashes (input_hash, sample_time) AS (
-                VALUES {inputs}
-            ),
-            matches AS (
-                SELECT 
-                    h.song_id,
-                    (h.time_offset - i.sample_time) AS time_diff
-                FROM 
-                    audio_hashes h
-                JOIN 
-                    input_hashes i ON h.hash = i.input_hash
-            )
-            SELECT 
-                m.song_id, 
-                s.title,
-                s.channel,  
-                COUNT(*) AS score
-            FROM 
-                matches m
-            JOIN
-                songs s ON m.song_id = s.id
-            GROUP BY 
-                m.song_id, s.title, s.channel, m.time_diff
-            ORDER BY 
-                score DESC
-            LIMIT 1;
-        """)
+        result = db.rpc(
+            "match_audio",
+            {"input_hashes": hash_pairs}
+        ).execute()
 
-        result = db.execute(sql_query).fetchone()
+        match = result.data[0]
 
-        if result:
-            return {
-                "match_found": True,
-                "song_id": result[0],
-                "title": result[1],
-                "artist": result[2], 
-                "score": result[3] 
-            }
-        else:
-            return {"match_found": False, "message": "No match found in database."}
+        if match["score"] < 20:
+            return {"match_found": False, "message": "Low confidence match."}
+
+        return {
+            "match_found": True,
+            "song_id": match["song_id"],
+            "title": match["title"],
+            "artist": match["channel"],
+            "score": match["score"],
+            "time_offset": match["time_diff"]
+        }
 
     except Exception as e:
         print(f"SERVER ERROR: {e}")
