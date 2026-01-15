@@ -1,16 +1,45 @@
 version: '3.8'
 
 services:
-  db:
-    image: postgres:alpine
-    container_name: my-postgres
+  # FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: shazam-backend
     restart: always
     environment:
-      POSTGRES_PASSWORD: strong_secret_pass
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_KEY: ${SUPABASE_KEY:-}
     ports:
-      - "5432:5432"
+      - "8000:8000"
     volumes:
-      - pg_data:/var/lib/postgresql/data
+      - ./backend:/app/backend
+      - /app/backend/__pycache__
+      - ./chunks:/app/chunks
+    networks:
+      - shazam-network
 
-volumes:
-  pg_data:
+  # React Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: shazam-frontend
+    restart: always
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app/frontend
+      - /app/frontend/node_modules
+    depends_on:
+      - backend
+    networks:
+      - shazam-network
+    environment:
+      VITE_API_URL: http://backend:8000
+    command: npm run dev
+
+networks:
+  shazam-network:
+    driver: bridge
