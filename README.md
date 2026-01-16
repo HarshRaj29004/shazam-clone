@@ -1,4 +1,4 @@
-# Shazam-like Audio Fingerprinting System
+# Music-Recognition-Engine System
 
 A full-stack audio fingerprinting application that identifies songs using advanced signal processing and machine learning. This project implements the Shazam algorithm to create unique audio fingerprints and match them against a database of known songs.
 
