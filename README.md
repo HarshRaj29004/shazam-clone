@@ -11,9 +11,7 @@ Add your application screenshots and demo images here:
 | Audio Upload Interface | ![Upload](./docs/images/upload.png) |
 | Fingerprint Visualization | ![Fingerprints](./docs/images/fingerprints.png) |
 | Song Match Results | ![Results](./docs/images/results.png) |
-| API Documentation | ![API Docs](./docs/images/api-docs.png) |
 
-> **Note**: Add screenshot images to `docs/images/` folder in the project root
 
 ## 🎵 Features
 
@@ -28,7 +26,7 @@ Add your application screenshots and demo images here:
 ## 🏗️ Project Structure
 
 ```
-shazam/
+Music-Recognition-Engine/
 ├── backend/                          # FastAPI backend server
 │   ├── main.py                      # FastAPI application entry point
 │   ├── audio/
@@ -40,16 +38,16 @@ shazam/
 │   │   └── db.py                    # Database client initialization
 │   ├── model/
 │   │   └── audio.py                 # Data models
-│   └── chunks/                      # Temporary chunk storage
-├── frontend/                         # React + Vite frontend
+│   └── .env                         # Database configs
+├── frontend/                        # React + Vite frontend
 │   ├── src/
 │   │   ├── App.jsx                  # Main application component
 │   │   ├── pages/
 │   │   │   └── audioRecord.jsx      # Audio recording interface
 │   │   └── assets/                  # Static assets
-│   └── package.json                 # Frontend dependencies
-├── docker-compose.yml               # PostgreSQL database configuration
-└── requirements.txt                 # Python dependencies
+│   ├── package.json                 # Frontend dependencies
+|   └── .env                         # backend route(optional)
+└── docker-compose.yml               # PostgreSQL database configuration
 ```
 
 ## 🔧 Tech Stack
@@ -88,7 +86,7 @@ shazam/
 ### 1. Clone the Repository
 ```bash
 git clone <repository-url>
-cd shazam
+cd Music-Recognition-Engine
 ```
 
 ### Option A: Using Docker (Recommended) 🐳
@@ -224,7 +222,6 @@ docker-compose up --build backend
 # Execute command in running container
 docker-compose exec backend bash
 docker-compose exec frontend bash
-docker-compose exec db psql -U postgres
 ```
 
 ---
@@ -235,9 +232,10 @@ docker-compose exec db psql -U postgres
 - `GET /` - Server status
 
 ### Audio Upload & Processing
-- `POST /audio_upload` - Upload audio from YouTube URL or file
+- `POST /audio_upload` - Upload audio from YouTube URL
   - Request body: `{"url": "youtube_url"}`
-  
+- `POST /identify` - Upload recorded audio 
+
 ### Audio Fingerprinting
 - Process uploaded audio and generate fingerprints
 - Store fingerprints in database
